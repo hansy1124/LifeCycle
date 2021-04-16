@@ -1,58 +1,65 @@
 #Packages
-using Plots
-using Interpolations
-using BenchmarkTools
-using ProgressMeter
-using Parameters
+using Distributed # Parallel computing
+addprocs(4) # I have 8 processors
+#Proceed after all processors are activated - kernel may break down
+print(workers()) # Number of parallel workers
+
+@everywhere using Plots
+@everywhere using Interpolations
+@everywhere using BenchmarkTools
+@everywhere using ProgressMeter
+@everywhere using Parameters
+@everywhere using SharedArrays # Parallel computing
 
 #You can only control MyParam1 and MyParam2 for other experiments
 #Then, accordingly, all codes will change
 
 #1. Parameter Section
 #1-1. Parameter for Economic Problem
-MyParam1 = @with_kw (T = 100,
+@everywhere MyParam1 = @with_kw (T = 100,
              β = 0.98,
              minc = 0.1,
              r = 1.02,
              σ = 2.0)
 #-Can construct param while chaning only some variables
-MyParam1c = MyParam1()
+@everywhere MyParam1c = MyParam1()
 typeof(MyParam1c)
 #1-2. Parameter for Numerical Computation
-MyParam2 = @with_kw (minx=0.,
+@everywhere MyParam2 = @with_kw (minx=0.,
                      maxx=1000000.,
                      nX=2000,
                      nA=1000)
 #-Can construct param while chaning only some variables
-MyParam2c = MyParam2()
+@everywhere MyParam2c = MyParam2()
 typeof(MyParam2c)
 
 #2. (State) X-grid Generator
-function gridgenerator(; minx=MyParam2c.minx,
+@everywhere function gridgenerator(; minx=MyParam2c.minx,
                          maxx=MyParam2c.maxx,
                          nX = MyParam2c.nX)
     return collect(range(minx, stop=maxx, length=nX))
 end
 #-Can construct gridX while changing only some variables
-gridX=gridgenerator()
+@everywhere gridX=gridgenerator()
 
 #3. Life-cycle Earning Generator
-lpf = [-(x-45.)^2 + 5000. for x in 1:100 ]
-lpf[60:end] .= lpf[59]*0.6
-append!(lpf,0)
+@everywhere lpf = [-(x-45.)^2 + 5000. for x in 1:100 ]
+@everywhere lpf[60:end] .= lpf[59]*0.6
+@everywhere append!(lpf,0)
 #plot(lpf, title="Life-time Labor Income", label="Labor Income")
 
 #4. current utility function
-function uc(c; σ=MyParam1c.σ)
+@everywhere function uc(c; σ=MyParam1c.σ)
     return (c.^(1-σ))./(1-σ)
 end
 
 ############################################################################
 
 #5. state loop - policy loop by broadcasting
-function state_grid_iter!(V, A, IV1, age)
+@everywhere function state_grid_iter!(V, A, IV1, age)
     # For each x state, generate the choice var grid - (borrowing constraint)
-    for (i, x) ∈ enumerate(gridX)
+    @sync @distributed for i ∈ eachindex(gridX)
+        x = gridX[i]
         maxa = x
         if age == MyParam1c.T
             mina = 0
@@ -70,14 +77,12 @@ function state_grid_iter!(V, A, IV1, age)
 end
 
 #6. age loop - final solver
-function solver()
-    V = zeros(MyParam1c.T+1,MyParam2c.nX)
-    A = zeros(MyParam1c.T,MyParam2c.nX)
+@everywhere function solver()
+    V = SharedArray{Float64}(zeros(MyParam1c.T+1,MyParam2c.nX))
+    A = SharedArray{Float64}(zeros(MyParam1c.T,MyParam2c.nX))
     for age in MyParam1c.T:-1:1 #@showprogress
         IV1 = LinearInterpolation(gridX, V[age+1, :], extrapolation_bc=Line())
         #IV1 = CubicSplineInterpolation(gridX, V[age+1, :], extrapolation_bc=Throw())
-        V1 = V
-        A1 = A
         V, A = state_grid_iter!(V, A, IV1, age)
     end
     return V, A
@@ -87,7 +92,6 @@ end
 @btime V22, A22 = solver()
 
 ############################################################################
-
 #7. Generate the Result
 
 #7-1. Value as a function of state var at every age.
@@ -139,5 +143,5 @@ plot!(cons_life, label="Consumption")
 plot!(lpf, label="Labor Income")
 
 #8-3. Save the plot
-#cd(raw"C:\Users\Owner\Dropbox\8. Coding Space\Julia\LifeCycle\Model2-BCLCEP")
+cd(raw"C:\Users\Owner\Dropbox\8. Coding Space\Julia\LifeCycle\Model2-BCLCEP")
 savefig(fig1,"x=$xinit.png")
