@@ -4,9 +4,11 @@ using Interpolations
 using BenchmarkTools
 using ProgressMeter
 using Parameters
+using StaticArrays
 
 #Performance Packages
 using Profile
+using Traceur
 
 #You can only control MyParam1 and MyParam2 for other experiments
 #Then, accordingly, all codes will change
@@ -34,38 +36,74 @@ typeof(MyParam2c)
 function gridgenerator(; minx=MyParam2c.minx,
                          maxx=MyParam2c.maxx,
                          nX = MyParam2c.nX)
-    return collect(range(minx, stop=maxx, length=nX))
+    return range(minx, stop=maxx, length=nX)
 end
 #-Can construct gridX while changing only some variables
-gridX=gridgenerator()
+const gridX=gridgenerator()
 
 #3. Life-cycle Earning Generator
-lpf = [-(x-45.)^2 + 5000. for x in 1:100 ]
+lpf = [-(x-45.)^2 + 5000. for x in 1:MyParam2c.T ]
 lpf[60:end] .= lpf[59]*0.6
 append!(lpf,0)
+typeof(lpf)
+lpf = SVector{MyParam1c.T+1}(lpf) # convert it into staticarrays
 #plot(lpf, title="Life-time Labor Income", label="Labor Income")
 
 #4. current utility function
-function uc(c; σ=MyParam1c.σ)
+function uc(c::Vector{Float64}; σ=2.0)
     return (c.^(1-σ))./(1-σ)
 end
+@code_warntype uc.(maxa .- gridA)
+@code_warntype uc(maxa .- gridA)
+typeof(maxa .- gridA)
 
+############################################################################
+#cf) Important - where I found a critical error for this code
+# - @code_warntype is really good tool to use!
+
+#1) Usage of uc()
+#Let's assume one hypothetical situation
+age=9
+maxa=gridX[10]
+gridA=zeros(MyParam2c.nA)
+gridA .= range(age == MyParam1c.T ? 0. : -(lpf[age+1] - MyParam1c.minc)/(1+MyParam1c.r), stop=maxa, length=MyParam2c.nA)
+
+plot(uc.(maxa.-gridA))
+plot!(uc(maxa.-gridA))
+uc.(maxa.-gridA) == uc(maxa.-gridA)
+# Both of the operations above have exactly same result.
+# However, the types are different
+@code_warntype uc.(maxa .- gridA) #return "AbstractVector"
+@code_warntype uc(maxa .- gridA) #return "Vector{Float64}"
+# This slowers the speed of my code significantly..!
+
+#2) Usage of state_grid_iter! or argmax
+V = zeros(MyParam1c.T+1,MyParam2c.nX)
+A = zeros(MyParam1c.T,MyParam2c.nX)
+age = 99
+IV1 = LinearInterpolation(gridX, V[age+1, :], extrapolation_bc=Line())
+@code_warntype state_grid_iter!(V, A, IV1, age, MyParam1c, MyParam2c, lpf, gridX) # return Tuple{Matrix{Float64}, Matrix{Float64}} - good!
+
+@code_warntype argmax(uc(maxa .- gridA)) #return Int64 - good!
+
+@code_warntype solver(MyParam1c, MyParam2c, lpf, gridX)
 ############################################################################
 
 #5. state loop - policy loop by broadcasting
-function state_grid_iter!(V, A, IV1, age)
+function state_grid_iter!(V, A, IV1, age, MyParam1c, MyParam2c, lpf, gridX)
     # For each x state, generate the choice var grid - (borrowing constraint)
+    gridA=zeros(MyParam2c.nA)
+    value1=zeros(MyParam2c.nA)
     for (i, x) ∈ enumerate(gridX)
         maxa = x
-        if age == MyParam1c.T
-            mina = 0
-        else
-            mina = -(lpf[age+1] - MyParam1c.minc)/(1+MyParam1c.r)
-            #mina = 0
-        end
-        nA = 1000
-        gridA = collect(range(mina, stop=maxa, length=MyParam2c.nA))
-        value1 = uc.(x .- gridA) + MyParam1c.β*IV1(gridA.*MyParam1c.r.+lpf[age+1])
+#        if age == MyParam1c.T
+#            mina = 0.
+#        else
+#            mina = -(lpf[age+1] - MyParam1c.minc)/(1+MyParam1c.r)
+#            #mina = 0
+#        end
+        gridA .= range(age == MyParam1c.T ? 0. : -(lpf[age+1] - MyParam1c.minc)/(1+MyParam1c.r), stop=maxa, length=MyParam2c.nA)
+        value1 .= uc(x .- gridA) + MyParam1c.β*IV1(gridA.*MyParam1c.r.+lpf[age+1])
         p = argmax(value1)
         V[age,i], A[age,i] = value1[p], gridA[p]
     end
@@ -73,22 +111,23 @@ function state_grid_iter!(V, A, IV1, age)
 end
 
 #6. age loop - final solver
-function solver()
+function solver(MyParam1c, MyParam2c, lpf, gridX)
     V = zeros(MyParam1c.T+1,MyParam2c.nX)
     A = zeros(MyParam1c.T,MyParam2c.nX)
     for age in MyParam1c.T:-1:1 #@showprogress
         IV1 = LinearInterpolation(gridX, V[age+1, :], extrapolation_bc=Line())
         #IV1 = CubicSplineInterpolation(gridX, V[age+1, :], extrapolation_bc=Throw())
-        V1 = V
-        A1 = A
-        V, A = state_grid_iter!(V, A, IV1, age)
+        V, A = state_grid_iter!(V, A, IV1, age, MyParam1c, MyParam2c, lpf, gridX)
     end
     return V, A
 end
 
 #V22, A22 = solver()
-@btime V22, A22 = solver()
+@btime V22, A22 = solver(MyParam1c, MyParam2c, lpf, gridX)
 
+#@trace solver(MyParam1c, MyParam2c, lpf, gridX)
+#@profile solver(MyParam1c, MyParam2c, lpf, gridX)
+#Profile.print()
 ############################################################################
 
 #7. Generate the Result

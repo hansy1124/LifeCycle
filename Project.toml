@@ -1,3 +1,7 @@
 [deps]
 Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+Profile = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
+QuantEcon = "fcd29c91-0bd7-5a09-975d-7ac3f643a60c"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Traceur = "37b6cedf-1f77-55f8-9503-c64b63398394"

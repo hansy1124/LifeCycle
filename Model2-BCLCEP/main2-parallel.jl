@@ -1,6 +1,6 @@
 #Packages
 using Distributed # Parallel computing
-addprocs(4) # I have 8 processors
+addprocs(8) # I have 8 processors
 #Proceed after all processors are activated - kernel may break down
 print(workers()) # Number of parallel workers
 
