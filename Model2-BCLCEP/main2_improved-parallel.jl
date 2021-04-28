@@ -163,7 +163,7 @@ plot(x,y,f,st=:surface,camera=(-30,30), title="Saving rate across X and Age")
 
 #8. Life Simulation
 
-xinit = 100000.0 #initial x
+xinit = 50000.0 #initial x
 value_life = zeros(MyParam1c.T)
 wealth_life = zeros(MyParam1c.T)
 cons_life = zeros(MyParam1c.T)

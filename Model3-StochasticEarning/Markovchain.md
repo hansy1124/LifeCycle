@@ -1,3 +1,5 @@
+## Markov Chain Discretization
+
 I am going to use Tauchen and Rouwenhorst from QuantEcon.jl (tauchen(), rouwenhorst())
 
 For correlated random variables process, I may need to do it by myself. Below is the brief description for each method.
@@ -66,4 +68,4 @@ check https://github.com/gcamilo/tauchenHussey
 
 #### Rouwenhort 1995 Method
 - Use symmetric and evenly spaced grid
-- Transition matrix with some special formula with $p, q$ in 703 page 
+- Transition matrix with some special formula with $p, q$ in 703 page
